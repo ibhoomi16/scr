@@ -1,6 +1,31 @@
 import streamlit as st
+from pymongo import MongoClient
 import json
 import re
+
+
+# Function to connect to MongoDB
+def connect_to_mongo(db_url, db_name, collection_name):
+    """
+    Connect to MongoDB and return the collection.
+    """
+    client = MongoClient(db_url)
+    db = client[db_name]
+    return db[collection_name]
+
+
+# Function to fetch data from MongoDB based on job ID
+def fetch_data_from_mongo(collection, job_id):
+    """
+    Fetch data from MongoDB collection using the provided job ID.
+    """
+    try:
+        documents = collection.find({"job_id": job_id})
+        return list(documents)
+    except Exception as e:
+        st.error(f"Error fetching data: {e}")
+        return []
+
 
 # Function to extract recommendations from Markdown content
 def extract_recommendations(md_content):
@@ -9,7 +34,7 @@ def extract_recommendations(md_content):
     """
     # Split content by lines and filter out the header and separator lines
     lines = md_content.splitlines()
-    table_lines = [line for line in lines if "|" in line and not line.startswith("|---")]
+    table_lines = [line for line in lines if "|" in line and not re.match(r"^-+$", line)]
 
     recommendations = []
     for line in table_lines:
@@ -28,10 +53,11 @@ def extract_recommendations(md_content):
 
     return recommendations
 
+
 # Function to generate JSON chunks
-def generate_json_chunks(recommendations, title, stage, disease, specialty):
+def generate_json_chunks(recommendations, title, stage, disease, specialty, job_id, fetched_data):
     """
-    Generate JSON chunks using the extracted recommendations and user inputs.
+    Generate JSON chunks using the extracted recommendations, user inputs, and MongoDB data.
     """
     base_json = {
         "title": title,
@@ -41,7 +67,9 @@ def generate_json_chunks(recommendations, title, stage, disease, specialty):
         "disease": [disease],
         "rationales": [],
         "references": [],
-        "specialty": [specialty]
+        "specialty": [specialty],
+        "job_id": job_id,
+        "fetched_data": fetched_data  # Include MongoDB fetched data
     }
 
     json_chunks = []
@@ -56,44 +84,74 @@ def generate_json_chunks(recommendations, title, stage, disease, specialty):
 
     return json_chunks
 
-# Streamlit app
-st.title("Markdown to JSON Converter")
 
-# Metadata Inputs
-st.header("Enter Metadata for Recommendations")
+# Streamlit app
+st.title("Markdown to JSON with MongoDB Integration")
+
+# Allow user to toggle between default and custom DB details
+use_default_db = st.checkbox("Use default MongoDB settings")
+
+if use_default_db:
+    # MongoDB Configuration (static values set by you)
+    db_url = "mongodb://your_mongo_url:27017"  # Use your MongoDB URL here
+    db_name = "your_database_name"  # Use your database name here
+    collection_name = "your_collection_name"  # Use your collection name here
+else:
+    # MongoDB Configuration Inputs (custom user input)
+    st.header("MongoDB Configuration")
+    db_url = st.text_input("MongoDB URL", "mongodb://localhost:27017")
+    db_name = st.text_input("Database Name", "document-parsing")
+    collection_name = st.text_input("Collection Name", "dps_data")
+
+# Input for job ID
+st.header("Enter Metadata for Job")
+job_id = st.text_input("Job ID (used for fetching MongoDB data)", "")
 title = st.text_input("Guide Title", "Distal Radius Fracture Rehabilitation")
 stage = st.text_input("Stage", "Rehabilitation")
 disease = st.text_input("Disease Title", "Fracture")
 specialty = st.text_input("Specialty", "orthopedics")
 
-# File uploader
+# File uploader for Markdown file
 st.header("Upload Markdown File")
 uploaded_file = st.file_uploader("Upload a Markdown (.md) file", type=["md"])
 
-if uploaded_file is not None:
-    # Read the file content
-    md_content = uploaded_file.read().decode("utf-8")
+# Process the data if a job ID and markdown file are provided
+if st.button("Process Data"):
+    if db_url and db_name and collection_name and job_id and uploaded_file:
+        try:
+            # Connect to MongoDB and fetch data
+            collection = connect_to_mongo(db_url, db_name, collection_name)
+            fetched_data = fetch_data_from_mongo(collection, job_id)
 
-    # Extract recommendations from the Markdown content
-    recommendations = extract_recommendations(md_content)
+            if fetched_data:
+                st.success(f"Fetched {len(fetched_data)} documents from the database.")
 
-    if recommendations:
-        # Generate JSON chunks using user inputs
-        json_chunks = generate_json_chunks(recommendations, title, stage, disease, specialty)
+                # Process the uploaded Markdown file
+                md_content = uploaded_file.read().decode("utf-8")
+                recommendations = extract_recommendations(md_content)
 
-        # Display the JSON chunks
-        st.subheader("Generated JSON:")
-        st.json(json_chunks)
+                if recommendations:
+                    # Generate JSON chunks using user inputs and MongoDB data
+                    json_chunks = generate_json_chunks(recommendations, title, stage, disease, specialty, job_id, fetched_data)
 
-        # Option to download JSON file
-        json_output = json.dumps(json_chunks, indent=2)
-        st.download_button(
-            label="Download JSON",
-            data=json_output,
-            file_name="output.json",
-            mime="application/json"
-        )
+                    # Display the generated JSON
+                    st.subheader("Generated JSON:")
+                    st.json(json_chunks)
+
+                    # Option to download JSON file
+                    json_output = json.dumps(json_chunks, indent=2)
+                    st.download_button(
+                        label="Download JSON",
+                        data=json_output,
+                        file_name="output.json",
+                        mime="application/json"
+                    )
+                else:
+                    st.warning("No recommendations found in the uploaded Markdown file. Please check the file format.")
+            else:
+                st.warning("No data found for the provided Job ID in the database.")
+
+        except Exception as e:
+            st.error(f"Error processing data: {e}")
     else:
-        st.warning("No recommendations found in the uploaded file. Please check the file format.")
-else:
-    st.info("Please upload a Markdown file to begin.")
+        st.warning("Please fill in all required fields and upload a Markdown file.")
