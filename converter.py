@@ -9,7 +9,7 @@ def extract_recommendations(md_content):
     """
     # Split content by lines and filter out the header and separator lines
     lines = md_content.splitlines()
-    table_lines = [line for line in lines if "|" in line and not re.match(r"^-+$", line)]
+    table_lines = [line for line in lines if "|" in line and not line.startswith("|---")]
 
     recommendations = []
     for line in table_lines:
