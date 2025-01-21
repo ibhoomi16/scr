@@ -1,47 +1,95 @@
 import streamlit as st
-import pandas as pd
 import json
+import re
 
-# Streamlit App
-st.title("CSV to JSON Transformer")
+# Function to extract recommendations from Markdown content
+def extract_recommendations(md_content):
+    """
+    Extract recommendations from Markdown table content.
+    """
+    # Regex to match COR, LOE, and recommendation content
+    pattern = r"\|\s*([\d\w]+)\s*\|\s*([\w-]+)\s*\|\s*(.*?)\s*\|"
+    matches = re.findall(pattern, md_content)
 
-# File Upload
-uploaded_file = st.file_uploader("Upload a CSV file", type="csv")
-
-if uploaded_file:
-    # Load the uploaded CSV file
-    data = pd.read_csv(uploaded_file)
+    recommendations = []
+    for cor, loe, recommendation in matches:
+        # Skip the header row
+        if cor.lower() == "cor" and loe.lower() == "loe":
+            continue
+        recommendations.append({
+            "recommendation_content": recommendation.strip(),
+            "recommendation_class": cor.strip(),
+            "rating": loe.strip()
+        })
     
-    # Process the CSV data into JSON format
-    output = []  
-    for _, row in data.iterrows():
-        transformed_rec = {
-            "title": row["title"],
-            "subCategory": [],  # Static empty list
-            "recommendation_content": row["recommendation_content"],
-            "guide_title": row["guide_title"],
-            "rating": row["rating"],
-            "stage": [" "],  # Static list containing a single space
-            "disease": [" "],  # Static list containing a single space
-            "rationales": [],  # Static empty list
-            "references": [],  # Static empty list
-            "specialty": row["specialty"].split(", "),  # Split specialties by commas into a list
-            "recommendation_class": row["recommendation_class"]
-        }
-        output.append(transformed_rec)
+    return recommendations
 
-    # Convert output to JSON format
-    json_data = json.dumps(output, indent=2)
+# Function to generate JSON chunks
+def generate_json_chunks(recommendations, title, stage, disease, specialty):
+    """
+    Generate JSON chunks using the extracted recommendations and user inputs.
+    """
+    base_json = {
+        "title": title,
+        "subCategory": [],
+        "guide_title": title,
+        "stage": [stage],
+        "disease": [disease],
+        "rationales": [],
+        "references": [],
+        "specialty": [specialty]
+    }
     
-    # Allow the user to download the JSON file
-    st.download_button(
-        label="Download JSON file",
-        data=json_data,
-        file_name="recommendations_output.json",
-        mime="application/json"
-    )
+    json_chunks = []
+    for rec in recommendations:
+        chunk = base_json.copy()
+        chunk.update({
+            "recommendation_content": rec["recommendation_content"],
+            "recommendation_class": rec["recommendation_class"],
+            "rating": rec["rating"]
+        })
+        json_chunks.append(chunk)
+    
+    return json_chunks
 
-    # Preview JSON data in the app
-    st.subheader("Preview of the Transformed JSON")
-    st.json(json_data)
+# Streamlit app
+st.title("Markdown to JSON Converter")
 
+# Metadata Inputs
+st.header("Enter Metadata for Recommendations")
+title = st.text_input("Guide Title", "Distal Radius Fracture Rehabilitation")
+stage = st.text_input("Stage", "Rehabilitation")
+disease = st.text_input("Disease Title", "Fracture")
+specialty = st.text_input("Specialty", "orthopedics")
+
+# File uploader
+st.header("Upload Markdown File")
+uploaded_file = st.file_uploader("Upload a Markdown (.md) file", type=["md"])
+
+if uploaded_file is not None:
+    # Read the file content
+    md_content = uploaded_file.read().decode("utf-8")
+    
+    # Extract recommendations from the Markdown content
+    recommendations = extract_recommendations(md_content)
+    
+    if recommendations:
+        # Generate JSON chunks using user inputs
+        json_chunks = generate_json_chunks(recommendations, title, stage, disease, specialty)
+        
+        # Display the JSON chunks
+        st.subheader("Generated JSON:")
+        st.json(json_chunks)
+        
+        # Option to download JSON file
+        json_output = json.dumps(json_chunks, indent=2)
+        st.download_button(
+            label="Download JSON",
+            data=json_output,
+            file_name="output.json",
+            mime="application/json"
+        )
+    else:
+        st.warning("No recommendations found in the uploaded file. Please check the file format.")
+else:
+    st.info("Please upload a Markdown file to begin.")
