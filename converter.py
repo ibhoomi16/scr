@@ -2,6 +2,11 @@ import streamlit as st
 from pymongo import MongoClient
 import json
 
+# Predefined MongoDB Configuration
+MONGO_DB_URL = "mongodb+srv://bhoomi16@cluster0.5vcgj.mongodb.net/?retryWrites=true&w=majority"
+DB_NAME = "document"
+COLLECTION_NAME = "data"
+
 # Function to connect to MongoDB
 def connect_to_mongo(db_url, db_name, collection_name):
     """
@@ -29,7 +34,7 @@ def fetch_recommendations_from_mongo(collection, job_id):
                 "page": document.get("page", ""),
                 "category": document.get("category", ""),
                 "index": document.get("index", ""),
-                "content": (document.get("content") or "").strip()
+                "content": document.get("content", "").strip()
             })
         return recommendations
     except Exception as e:
@@ -37,15 +42,6 @@ def fetch_recommendations_from_mongo(collection, job_id):
 
 # Streamlit app
 st.title("Recommendations Fetcher with MongoDB Integration")
-
-# MongoDB Configuration Inputs
-st.header("MongoDB Configuration")
-db_url = st.text_input(
-    "MongoDB URL",
-    "mongodb+srv://bhoomi16:<password>@cluster0.5vcgj.mongodb.net/?retryWrites=true&w=majority".replace("<password>", "bhoomi16")
-)
-db_name = st.text_input("Database Name", "document")
-collection_name = st.text_input("Collection Name", "data")
 
 # Input for job ID
 st.header("Enter Metadata for Job")
@@ -57,11 +53,11 @@ specialty = st.text_input("Specialty", "orthopedics")
 
 # Process the data when the button is clicked
 if st.button("Process Data"):
-    if all([db_url, db_name, collection_name, job_id, title, stage, disease, specialty]):
+    if all([job_id, title, stage, disease, specialty]):
         try:
             # Connect to MongoDB and fetch data
             st.info("Connecting to MongoDB...")
-            collection = connect_to_mongo(db_url, db_name, collection_name)
+            collection = connect_to_mongo(MONGO_DB_URL, DB_NAME, COLLECTION_NAME)
 
             st.info("Fetching recommendations from MongoDB...")
             fetched_data = fetch_recommendations_from_mongo(collection, job_id)
